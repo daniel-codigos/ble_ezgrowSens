@@ -26,7 +26,7 @@ BLECharacteristic *pCharacteristic;
 BLEService *pService;
 BLEServer *pServer;
 StaticJsonDocument<200> jsonTopic_save;
-WiFiClient espClient;
+WiFiClientSecure espClient;
 PubSubClient client(espClient);
 
 //sensor info
@@ -137,7 +137,7 @@ void connectMqtt() {
   if (error) {
     Serial.print("Error al deserializar JSON: ");
     Serial.println(error.c_str());
-    client.setServer(mqtt_server, 1883);
+    client.setServer(mqtt_server, 8883);
     client.setCallback(RecibirMQTT);
     Serial.println("Connecting to MQTT...");
     if (client.connect(mqtt_client, mqtt_user, mqtt_password)) {
@@ -153,7 +153,7 @@ void connectMqtt() {
   Serial.println(topic);
   Serial.println(token);
   Serial.println(topicStr);
-  client.setServer(mqtt_server, 1883);
+  client.setServer(mqtt_server, 8883);
   client.setCallback(RecibirMQTT);
   Serial.println("Connecting to MQTT...");
   if (client.connect(mqtt_client, mqtt_user, mqtt_password)) {
@@ -357,21 +357,38 @@ void loop() {
       break;
 
     case CONNECTING_MQTT:
-      client.loop(); // Handle MQTT connection attempts
+      // Aquí intentas conectar a MQTT. Mantenemos client.loop() para procesar la conexión
+      client.loop();
       break;
 
     case CONNECTED_MQTT:
+      // *** Verificar WiFi y MQTT en caso de desconexión ***
+      if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("WiFi se ha desconectado, volviendo a conectar...");
+        changeState(CONNECTING_WIFI); 
+      }
+      if (!client.connected()) {
+        Serial.println("MQTT se ha desconectado, intentando reconectar...");
+        changeState(CONNECTING_MQTT);
+      }
+
       if (wait_mqtt_info) {
         Serial.println("Waiting for MQTT info...");
-        client.loop();
       }
-      //Serial.println("locojaja1");
-      client.loop(); // Handle MQTT
+      client.loop(); // Mantener la conexión MQTT
       break;
 
     case WAITING_MQTT_INFO:
-      //Serial.println("locojaja2");
-      client.loop(); // Handle MQTT
+      // *** Igual que en CONNECTED_MQTT ***
+      if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("WiFi se ha desconectado, volviendo a conectar...");
+        changeState(CONNECTING_WIFI); 
+      }
+      if (!client.connected()) {
+        Serial.println("MQTT se ha desconectado, intentando reconectar...");
+        changeState(CONNECTING_MQTT);
+      }
+      client.loop();
       break;
 
     case SENDING_SENSOR_DATA:
@@ -383,3 +400,4 @@ void loop() {
   }
   delay(100);
 }
+
