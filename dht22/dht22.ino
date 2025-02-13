@@ -137,7 +137,7 @@ void connectMqtt() {
   if (error) {
     Serial.print("Error al deserializar JSON: ");
     Serial.println(error.c_str());
-    client.setServer(mqtt_server, 8883);
+    client.setServer(mqtt_server, 1883);
     client.setCallback(RecibirMQTT);
     Serial.println("Connecting to MQTT...");
     if (client.connect(mqtt_client, mqtt_user, mqtt_password)) {
@@ -153,7 +153,7 @@ void connectMqtt() {
   Serial.println(topic);
   Serial.println(token);
   Serial.println(topicStr);
-  client.setServer(mqtt_server, 8883);
+  client.setServer(mqtt_server, 1883);
   client.setCallback(RecibirMQTT);
   Serial.println("Connecting to MQTT...");
   if (client.connect(mqtt_client, mqtt_user, mqtt_password)) {
@@ -400,4 +400,3 @@ void loop() {
   }
   delay(100);
 }
-
