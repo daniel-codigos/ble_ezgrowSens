@@ -2,7 +2,7 @@
 #include <Preferences.h>
 #include <BLEDevice.h>
 #include <BLEUtils.h>
-#include <DallasTemperature.h>
+#include <SHT1x-ESP.h>
 #include <BLEServer.h>
 #include <ArduinoJson.h>
 #include <NewPing.h>
@@ -15,22 +15,23 @@
 Preferences preferences;
 bool mqtt_info = false;
 bool wait_mqtt_info = false;
-const char* mqtt_client = "Esp32Client3";
+const char* mqtt_client = "Esp32Client2";
 const char* mqtt_server = "IP";
 const char* mqtt_topic = "senInfo";
-const char* mqtt_user = "USER";
-const char* mqtt_password = "Pass";
+const char* mqtt_user = "user";
+const char* mqtt_password = "pass";
 bool wifiCreddata = false;
 BLECharacteristic *pCharacteristic;
 BLEService *pService;
 BLEServer *pServer;
 StaticJsonDocument<200> jsonTopic_save;
-WiFiClientSecure espClient;
+WiFiClient espClient;
 PubSubClient client(espClient);
 
 //sensor info
-OneWire ourWire(22);
-DallasTemperature sensors(&ourWire);
+#define dataPin 21
+#define clockPin 22
+SHT1x sht1x(dataPin, clockPin);
 float lastTemperature = 0.0;
 
 char lastReceivedCommand[100] = "";
@@ -123,7 +124,6 @@ void connectToWiFi(const char* ssid, const char* password) {
 
 void connectMqtt() {
   //wait_mqtt_info = true;
-  //"prin", "wasii98", jsonDoc_mqtt_f
   Serial.println("aquituuuu");
   Serial.println(leerDato("prin", "wasii98"));
   String jsonString = leerDato("prin", "wasii98");
@@ -135,7 +135,7 @@ void connectMqtt() {
   if (error) {
     Serial.print("Error al deserializar JSON: ");
     Serial.println(error.c_str());
-    client.setServer(mqtt_server, 8883);
+    client.setServer(mqtt_server, 1883);
     client.setCallback(RecibirMQTT);
     Serial.println("Connecting to MQTT...");
     if (client.connect(mqtt_client, mqtt_user, mqtt_password)) {
@@ -151,15 +151,16 @@ void connectMqtt() {
   Serial.println(topic);
   Serial.println(token);
   Serial.println(topicStr);
-  client.setServer(mqtt_server, 8883);
+  client.setServer(mqtt_server, 1883);
   client.setCallback(RecibirMQTT);
   Serial.println("Connecting to MQTT...");
   if (client.connect(mqtt_client, mqtt_user, mqtt_password)) {
-    Serial.println("Connected to MQTT");
+    Serial.println("Connected to MQTT from good");
     Serial.println(topicStr.length());
     if (topicStr.length() > 0) {
       Serial.println("hay datos saved cabronesss"); // Aquí se usan comillas dobles
       mqtt_info = true;
+      //wait_mqtt_info = true
       jsonTopic_save = dataSaved;
       changeState(CONNECTED_MQTT);
       client.subscribe(topic);
@@ -220,20 +221,32 @@ void RecibirMQTT(char* topic, byte* payload, unsigned int length) {
 
     // Verificar si la parte alfanumérica está presente
     if (alphanumericPart.length() > 0 && jsonTopic_save["token"] == alphanumericPart) {
-      sensors.begin();
       float cadaTemp[5];
-      float suma = 0;
+      float cadaHum[5];
+      float sumaT = 0;
+      float sumaH = 0;
       for (int i = 0; i < 5; i++) {
-        sensors.requestTemperatures();
-        float temp = sensors.getTempCByIndex(0);
-        cadaTemp[i] = temp;
-        suma += cadaTemp[i];
-        delay(100);
+        // Reinicializar el sensor antes de cada lectura
+        SHT1x sht1x(dataPin, clockPin);
+        float temp_c = sht1x.readTemperatureC();
+        float humidity = sht1x.readHumidity();
+        
+        // Aumentar el tiempo de espera entre lecturas
+        delay(500); // Aumentado de 100 a 500 milisegundos
+
+        cadaTemp[i] = temp_c;
+        cadaHum[i] = humidity;
+        sumaT += cadaTemp[i];
+        sumaH += cadaHum[i];
       }
-      float media = (float) suma / 5.0;
-      lastTemperature = media;          
+      float mediaT = (float)sumaT / 5.0;
+      float mediaH = (float)sumaH / 5.0;
+      Serial.print("La media es: ");
+      Serial.print(mediaT);
+      Serial.print(mediaH);
       StaticJsonDocument<200> jsonDoc;
-      jsonDoc["temperatura"] = String(media, 2);
+      jsonDoc["temperatura"] = String(mediaT, 2);
+      jsonDoc["humedad"] = String(mediaH, 2);
       jsonDoc["info"] = topic;
       jsonDoc["token"] = jsonTopic_save["token"];
       jsonDoc["space"] = jsonTopic_save["space"];
@@ -247,8 +260,8 @@ void RecibirMQTT(char* topic, byte* payload, unsigned int length) {
       } else {
         Serial.println("ERRORES EN SEND!!!!!!!!!");
       }
-      jsonPayload.clear();
       jsonDoc.clear();
+      jsonPayload.clear();
     } else {
       Serial.println("mal token");
     }
@@ -265,17 +278,20 @@ void RecibirMQTT(char* topic, byte* payload, unsigned int length) {
       Serial.println(error.c_str());
     } else {
       if (jsonDoc_mqtt["topic"]) {
-        Serial.println("JSON analizado correctamente");
-        jsonTopic_save["topic"] = jsonDoc_mqtt["topic"];
-        jsonTopic_save["token"] = jsonDoc_mqtt["token"];
-        jsonTopic_save["name"] = jsonDoc_mqtt["name"];
-        jsonTopic_save["space"] = jsonDoc_mqtt["space"];
-        String jsonDoc_mqtt_f;
-        serializeJson(jsonDoc_mqtt, jsonDoc_mqtt_f);
-        escribirDato("prin", "wasii98", jsonDoc_mqtt_f);
-        client.subscribe(jsonDoc_mqtt["topic"]);
-        mqtt_info = true;
-        changeState(WAITING_MQTT_INFO);
+        if (!mqtt_info) {
+          Serial.println("JSON analizado correctamente");
+          jsonTopic_save.clear();
+          jsonTopic_save["topic"] = jsonDoc_mqtt["topic"];
+          jsonTopic_save["token"] = jsonDoc_mqtt["token"];
+          jsonTopic_save["name"] = jsonDoc_mqtt["name"];
+          jsonTopic_save["space"] = jsonDoc_mqtt["space"];
+          String jsonDoc_mqtt_f;
+          serializeJson(jsonDoc_mqtt, jsonDoc_mqtt_f);
+          escribirDato("prin", "wasii98", jsonDoc_mqtt_f);
+          client.subscribe(jsonDoc_mqtt["topic"]);
+          mqtt_info = true;
+          changeState(WAITING_MQTT_INFO);
+        }
       }
     }
   }
@@ -337,25 +353,16 @@ void loop() {
       break;
 
     case CONNECTING_MQTT:
-      // Aquí intentas conectar a MQTT. Mantenemos client.loop() para procesar la conexión
-      client.loop();
+      client.loop(); // Handle MQTT connection attempts
       break;
 
     case CONNECTED_MQTT:
-      // *** Verificar WiFi y MQTT en caso de desconexión ***
-      if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("WiFi se ha desconectado, volviendo a conectar...");
-        changeState(CONNECTING_WIFI); 
-      }
-      if (!client.connected()) {
-        Serial.println("MQTT se ha desconectado, intentando reconectar...");
-        changeState(CONNECTING_MQTT);
-      }
-
       if (wait_mqtt_info) {
         Serial.println("Waiting for MQTT info...");
+        client.loop();
       }
-      client.loop(); // Mantener la conexión MQTT
+      //Serial.println("locojaja1");
+      client.loop(); // Handle MQTT
       break;
 
     case WAITING_MQTT_INFO:
@@ -380,4 +387,3 @@ void loop() {
   }
   delay(100);
 }
-

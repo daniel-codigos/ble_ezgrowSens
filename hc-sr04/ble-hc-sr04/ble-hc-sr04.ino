@@ -267,6 +267,7 @@ void RecibirMQTT(char* topic, byte* payload, unsigned int length) {
     } else {
       if (jsonDoc_mqtt["topic"]) {
         Serial.println("JSON analizado correctamente");
+        jsonTopic_save.clear();
         jsonTopic_save["topic"] = jsonDoc_mqtt["topic"];
         jsonTopic_save["token"] = jsonDoc_mqtt["token"];
         jsonTopic_save["name"] = jsonDoc_mqtt["name"];
@@ -351,8 +352,16 @@ void loop() {
       break;
 
     case WAITING_MQTT_INFO:
-      //Serial.println("locojaja2");
-      client.loop(); // Handle MQTT
+      // *** Igual que en CONNECTED_MQTT ***
+      if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("WiFi se ha desconectado, volviendo a conectar...");
+        changeState(CONNECTING_WIFI); 
+      }
+      if (!client.connected()) {
+        Serial.println("MQTT se ha desconectado, intentando reconectar...");
+        changeState(CONNECTING_MQTT);
+      }
+      client.loop();
       break;
 
     case SENDING_SENSOR_DATA:
