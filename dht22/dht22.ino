@@ -16,17 +16,17 @@
 Preferences preferences;
 bool mqtt_info = false;
 bool wait_mqtt_info = false;
-const char* mqtt_client = "Esp32Client2_dht22_senmamis2";
-const char* mqtt_server = "IP";
+const char* mqtt_client = "Esp32Client2_dht22_senmamis2456f";
+const char* mqtt_server = "HOST";
 const char* mqtt_topic = "senInfo";
 const char* mqtt_user = "USER";
-const char* mqtt_password = "PASSWORD";
+const char* mqtt_password = "PASS";
 bool wifiCreddata = false;
 BLECharacteristic *pCharacteristic;
-BLEService *pService;
 BLEServer *pServer;
+BLEService *pService;
 StaticJsonDocument<200> jsonTopic_save;
-WiFiClientSecure espClient;
+WiFiClient espClient;
 PubSubClient client(espClient);
 
 //sensor info
@@ -205,101 +205,75 @@ void setupBLE() {
 }
 
 void RecibirMQTT(char* topic, byte* payload, unsigned int length) {
-  Serial.println("Recibió un mensaje del servidor:");
+  Serial.println("📩 Mensaje recibido en MQTT:");
   Serial.println(topic);
-  
-  // Copia el mensaje del payload al array lastReceivedCommand
+
+  String receivedCommand = "";
   for (int i = 0; i < length; i++) {
-    lastReceivedCommand[i] = (char)payload[i];
+    receivedCommand += (char)payload[i];
   }
 
-  // Agrega un carácter nulo al final del array para asegurar que es una cadena válida
-  lastReceivedCommand[length] = '\0';
-  Serial.println("Comando recibido: " + String(lastReceivedCommand));
+  Serial.println("Comando recibido: " + receivedCommand);
   
-  if (String(lastReceivedCommand).startsWith("send")) {
-    // Extraer la parte alfanumérica después de "send"
-    String alphanumericPart = String(lastReceivedCommand).substring(5); // "send" tiene longitud 5
-
-    // Verificar si la parte alfanumérica está presente
-    if (alphanumericPart.length() > 0 && jsonTopic_save["token"] == alphanumericPart) {
-      float cadaTemp[5];
-      float cadaHum[5];
-      float sumaT = 0;
-      float sumaH = 0;
-      dht.begin();
-      for (int i = 0; i < 5; i++) {
-        // Reinicializar el sensor antes de cada lectura
-        //DHT dht(DHTPIN, DHTTYPE);
-        float h = dht.readHumidity(); //Leemos la Humedad
-        float t = dht.readTemperature(); 
-        Serial.print(h);
-        //Serial.print("\n"); 
-        Serial.print(t);
-        // Aumentar el tiempo de espera entre lecturas
-        delay(1000); // Aumentado de 100 a 500 milisegundos
-
-        cadaTemp[i] = t;
-        cadaHum[i] = h;
-        sumaT += cadaTemp[i];
-        sumaH += cadaHum[i];
-      }
-      float mediaT = (float)sumaT / 5.0;
-      float mediaH = (float)sumaH / 5.0;
-      Serial.print("La media es: ");
-      Serial.print(mediaT);
-      Serial.print(mediaH);
-      StaticJsonDocument<200> jsonDoc;
-      jsonDoc["temperatura"] = String(mediaT, 2);
-      jsonDoc["humedad"] = String(mediaH, 2);
-      jsonDoc["info"] = topic;
-      jsonDoc["token"] = jsonTopic_save["token"];
-      jsonDoc["space"] = jsonTopic_save["space"];
-      char jsonPayload[200];
-      const char* datoNow = jsonTopic_save["topic"];
-      serializeJson(jsonDoc, jsonPayload);
-      Serial.println(lastReceivedCommand);
-      Serial.println(datoNow);
-      if (strlen(datoNow) > 0) {
-        client.publish(datoNow, jsonPayload);
-      } else {
-        Serial.println("ERRORES EN SEND!!!!!!!!!");
-      }
-      jsonDoc.clear();
-    } else {
-      Serial.println("mal token");
+  if (receivedCommand.startsWith("send")) {
+    // Extraer token y verificar
+    String tokenRecibido = receivedCommand.substring(5);
+    if (tokenRecibido != jsonTopic_save["token"]) {
+      Serial.println("🚫 Token incorrecto");
+      return;
     }
-    
-  } else if (String(lastReceivedCommand).startsWith("delete")) {
-    borrarDato("prin", "wasii98");
-    borrarDato("wifi", "ssid");
-    borrarDato("wifi", "password");
-    Serial.println("Datos borrados de EEPROM");
-  } else {
-    DynamicJsonDocument jsonDoc_mqtt(200);
-    DeserializationError error = deserializeJson(jsonDoc_mqtt, String(lastReceivedCommand));
-    if (error) {
-      Serial.println("Error al analizar JSON: ");
-      Serial.println(error.c_str());
-    } else {
-      if (jsonDoc_mqtt["topic"]) {
-        if (!mqtt_info) {
-          Serial.println("JSON analizado correctamente");
-          jsonTopic_save["topic"] = jsonDoc_mqtt["topic"];
-          jsonTopic_save["token"] = jsonDoc_mqtt["token"];
-          jsonTopic_save["name"] = jsonDoc_mqtt["name"];
-          jsonTopic_save["space"] = jsonDoc_mqtt["space"];
-          String jsonDoc_mqtt_f;
-          serializeJson(jsonDoc_mqtt, jsonDoc_mqtt_f);
-          escribirDato("prin", "wasii98", jsonDoc_mqtt_f);
-          client.subscribe(jsonDoc_mqtt["topic"]);
-          mqtt_info = true;
-          changeState(WAITING_MQTT_INFO);
-        }
+
+    // Reinicializar el sensor antes de cada lectura
+    dht.begin();
+    delay(2000);  // Permitir que el sensor se estabilice
+
+    float temperatura = NAN, humedad = NAN;
+
+    for (int i = 0; i < 5; i++) {
+      humedad = dht.readHumidity();
+      temperatura = dht.readTemperature();
+
+      if (!isnan(temperatura) && !isnan(humedad)) {
+        break;  // Si la lectura es válida, salimos del loop
       }
+
+      Serial.println("⚠️ Lectura fallida, reintentando...");
+      dht.begin(); // Reinicializar sensor
+      delay(2000); // Esperar antes de intentar nuevamente
+    }
+
+    if (isnan(temperatura) || isnan(humedad)) {
+      Serial.println("❌ Error: No se pudo obtener datos del sensor.");
+      return;
+    }
+
+    Serial.print("✅ Temperatura: ");
+    Serial.print(temperatura);
+    Serial.print("°C | Humedad: ");
+    Serial.print(humedad);
+    Serial.println("%");
+
+    // Enviar datos por MQTT
+    StaticJsonDocument<200> jsonDoc;
+    jsonDoc["temperatura"] = String(temperatura, 2);
+    jsonDoc["humedad"] = String(humedad, 2);
+    jsonDoc["info"] = topic;
+    jsonDoc["token"] = jsonTopic_save["token"];
+    jsonDoc["space"] = jsonTopic_save["space"];
+
+    char jsonPayload[200];
+    serializeJson(jsonDoc, jsonPayload);
+    
+    const char* datoNow = jsonTopic_save["topic"];
+    if (strlen(datoNow) > 0) {
+      client.publish(datoNow, jsonPayload);
+      Serial.println("📤 Datos enviados por MQTT.");
+    } else {
+      Serial.println("❌ ERROR: No se ha definido un topic para enviar datos.");
     }
   }
 }
+
 
 void infoMQTT() {
   Serial.println("Enviando petición para información MQTT");
@@ -322,7 +296,7 @@ void infoMQTT() {
 
 void setup() {
   Serial.begin(115200);
-
+  dht.begin();
   String ssid, password;
   loadCredentials(ssid, password);
 
