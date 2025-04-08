@@ -118,8 +118,10 @@ class MyCallbacks : public BLECharacteristicCallbacks {
 };
 
 void connectToWiFi(const char* ssid, const char* password) {
+  Serial.print("Reconectando a WiFi...");
+  WiFi.disconnect(); // 🔥 Desconecta antes de intentar nueva conexión.
+  delay(500);
   WiFi.begin(ssid, password);
-  Serial.print("Connecting to WiFi");
   changeState(CONNECTING_WIFI);
 }
 
@@ -310,21 +312,36 @@ void setup() {
   }
 }
 
+int wifiRetryCount = 0;
 void loop() {
   switch (currentState) {
-    case CONNECTING_WIFI:
-      if (WiFi.status() == WL_CONNECTED) {
-        Serial.println("Connected to WiFi");
-        Serial.print("IP Address: ");
-        Serial.println(WiFi.localIP());
-        wifiCreddata = true;
-        changeState(CONNECTED_WIFI);
-      } else if (millis() - stateStartTime > 20000) { // 20 seconds timeout
-        Serial.println("Failed to connect to WiFi after multiple attempts. Starting BLE server...");
+  
+  case CONNECTING_WIFI:
+    if (WiFi.status() == WL_CONNECTED) {
+      Serial.println("Connected to WiFi");
+      Serial.print("IP Address: ");
+      Serial.println(WiFi.localIP());
+      wifiRetryCount = 0; // Reset retry counter
+      changeState(CONNECTED_WIFI);
+    } else if (millis() - stateStartTime > 15000) { // timeout de 15 segundos
+      wifiRetryCount++;
+      Serial.printf("Retry WiFi connection attempt #%d\n", wifiRetryCount);
+  
+      if (wifiRetryCount >= 3) {
+        Serial.println("Failed after 3 attempts, starting BLE...");
         setupBLE();
         changeState(IDLE);
+        wifiRetryCount = 0;
+      } else {
+        String ssid, password;
+        loadCredentials(ssid, password);
+        if (ssid.length() > 0 && password.length() > 0) {
+          connectToWiFi(ssid.c_str(), password.c_str()); // reintentar
+        }
       }
-      break;
+    }
+    break;
+
 
     case CONNECTED_WIFI:
       connectMqtt();
@@ -334,23 +351,27 @@ void loop() {
       // Aquí intentas conectar a MQTT. Mantenemos client.loop() para procesar la conexión
       client.loop();
       break;
-
     case CONNECTED_MQTT:
-      // *** Verificar WiFi y MQTT en caso de desconexión ***
       if (WiFi.status() != WL_CONNECTED) {
         Serial.println("WiFi se ha desconectado, volviendo a conectar...");
-        changeState(CONNECTING_WIFI); 
-      }
-      if (!client.connected()) {
+        String ssid, password;
+        loadCredentials(ssid, password);
+        if (ssid.length() > 0 && password.length() > 0) {
+          WiFi.disconnect();  // Asegúrate que WiFi está desconectado antes de intentar reconectar.
+          delay(1000);
+          connectToWiFi(ssid.c_str(), password.c_str());
+        } else {
+          Serial.println("No credentials found to reconnect!");
+          setupBLE();
+          changeState(IDLE);
+        }
+      } else if (!client.connected()) {
         Serial.println("MQTT se ha desconectado, intentando reconectar...");
         changeState(CONNECTING_MQTT);
       }
-
-      if (wait_mqtt_info) {
-        Serial.println("Waiting for MQTT info...");
-      }
-      client.loop(); // Mantener la conexión MQTT
+      client.loop();
       break;
+
 
     case WAITING_MQTT_INFO:
       // *** Igual que en CONNECTED_MQTT ***

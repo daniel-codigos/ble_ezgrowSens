@@ -16,11 +16,11 @@
 Preferences preferences;
 bool mqtt_info = false;
 bool wait_mqtt_info = false;
-const char* mqtt_client = "ESP32Client4_bg_hume_tierra1";
-const char* mqtt_server = "IP";
+const char* mqtt_client = "ESP32Client4_bg_hume_tierra122";
+const char* mqtt_server = "terie.mooo.com";
 const char* mqtt_topic = "senInfo";
-const char* mqtt_user = "user";
-const char* mqtt_password = "pass";
+const char* mqtt_user = "pi";
+const char* mqtt_password = "wasimodo98_code";
 bool wifiCreddata = false;
 BLECharacteristic *pCharacteristic;
 BLEService *pService;
@@ -81,18 +81,14 @@ class MyCallbacks : public BLECharacteristicCallbacks {
     Serial.print("Received: ");
     Serial.println(value);
 
-    // Append received fragment to the message
     receivedMessage += value;
 
-    // Check if the message is complete
     if (receivedMessage.endsWith("\n")) {
       Serial.print("Complete message: ");
       Serial.println(receivedMessage.c_str());
 
-      // Remove the newline character
       receivedMessage.trim();
 
-      // Parse the received credentials (expected format: "SSID:PASSWORD")
       int delimiterIndex = receivedMessage.indexOf(':');
       if (delimiterIndex > 0) {
         String ssid = receivedMessage.substring(0, delimiterIndex);
@@ -109,7 +105,6 @@ class MyCallbacks : public BLECharacteristicCallbacks {
         Serial.println("Invalid credentials format");
       }
 
-      // Clear the received message buffer
       receivedMessage = "";
     }
   }
@@ -249,7 +244,7 @@ void RecibirMQTT(char* topic, byte* payload, unsigned int length) {
             }
             sensorDataJson.clear();
             jsonDoc2.clear();
-            jsonPayload.clear();
+            //jsonPayload.clear();
         } else {
             Serial.println("mal token");
         }
