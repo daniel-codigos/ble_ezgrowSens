@@ -327,7 +327,7 @@ void loop() {
       wifiRetryCount++;
       Serial.printf("Retry WiFi connection attempt #%d\n", wifiRetryCount);
   
-      if (wifiRetryCount >= 3) {
+      if (wifiRetryCount >= 9) {
         Serial.println("Failed after 3 attempts, starting BLE...");
         setupBLE();
         changeState(IDLE);
@@ -351,26 +351,25 @@ void loop() {
       // Aquí intentas conectar a MQTT. Mantenemos client.loop() para procesar la conexión
       client.loop();
       break;
+
     case CONNECTED_MQTT:
       if (WiFi.status() != WL_CONNECTED) {
         Serial.println("WiFi se ha desconectado, volviendo a conectar...");
-        String ssid, password;
-        loadCredentials(ssid, password);
-        if (ssid.length() > 0 && password.length() > 0) {
-          WiFi.disconnect();  // Asegúrate que WiFi está desconectado antes de intentar reconectar.
-          delay(1000);
-          connectToWiFi(ssid.c_str(), password.c_str());
-        } else {
-          Serial.println("No credentials found to reconnect!");
-          setupBLE();
-          changeState(IDLE);
-        }
-      } else if (!client.connected()) {
+        // Reseteas contadores si quieres
+        wifiRetryCount = 0;
+        // Cortas WiFi si procede
+        WiFi.disconnect(); 
+        delay(100);
+        // Pasas al estado CONNECTING_WIFI
+        changeState(CONNECTING_WIFI);
+      }
+      else if (!client.connected()) {
         Serial.println("MQTT se ha desconectado, intentando reconectar...");
         changeState(CONNECTING_MQTT);
       }
       client.loop();
       break;
+
 
 
     case WAITING_MQTT_INFO:

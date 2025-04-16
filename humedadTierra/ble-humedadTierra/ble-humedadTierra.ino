@@ -314,39 +314,65 @@ void setup() {
     setupBLE();
   }
 }
-
+int wifiRetryCount = 0;
 void loop() {
   switch (currentState) {
-    case CONNECTING_WIFI:
-      if (WiFi.status() == WL_CONNECTED) {
-        Serial.println("Connected to WiFi");
-        Serial.print("IP Address: ");
-        Serial.println(WiFi.localIP());
-        wifiCreddata = true;
-        changeState(CONNECTED_WIFI);
-      } else if (millis() - stateStartTime > 20000) { // 20 seconds timeout
-        Serial.println("Failed to connect to WiFi after multiple attempts. Starting BLE server...");
+  
+  case CONNECTING_WIFI:
+    if (WiFi.status() == WL_CONNECTED) {
+      Serial.println("Connected to WiFi");
+      Serial.print("IP Address: ");
+      Serial.println(WiFi.localIP());
+      wifiRetryCount = 0; // Reset retry counter
+      changeState(CONNECTED_WIFI);
+    } else if (millis() - stateStartTime > 15000) { // timeout de 15 segundos
+      wifiRetryCount++;
+      Serial.printf("Retry WiFi connection attempt #%d\n", wifiRetryCount);
+  
+      if (wifiRetryCount >= 9) {
+        Serial.println("Failed after 3 attempts, starting BLE...");
         setupBLE();
         changeState(IDLE);
+        wifiRetryCount = 0;
+      } else {
+        String ssid, password;
+        loadCredentials(ssid, password);
+        if (ssid.length() > 0 && password.length() > 0) {
+          connectToWiFi(ssid.c_str(), password.c_str()); // reintentar
+        }
       }
-      break;
+    }
+    break;
+
 
     case CONNECTED_WIFI:
       connectMqtt();
       break;
 
     case CONNECTING_MQTT:
-      client.loop(); // Handle MQTT connection attempts
+      // Aquí intentas conectar a MQTT. Mantenemos client.loop() para procesar la conexión
+      client.loop();
       break;
 
     case CONNECTED_MQTT:
-      if (wait_mqtt_info) {
-        Serial.println("Waiting for MQTT info...");
-        client.loop();
+      if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("WiFi se ha desconectado, volviendo a conectar...");
+        // Reseteas contadores si quieres
+        wifiRetryCount = 0;
+        // Cortas WiFi si procede
+        WiFi.disconnect(); 
+        delay(100);
+        // Pasas al estado CONNECTING_WIFI
+        changeState(CONNECTING_WIFI);
       }
-      //Serial.println("locojaja1");
-      client.loop(); // Handle MQTT
+      else if (!client.connected()) {
+        Serial.println("MQTT se ha desconectado, intentando reconectar...");
+        changeState(CONNECTING_MQTT);
+      }
+      client.loop();
       break;
+
+
 
     case WAITING_MQTT_INFO:
       // *** Igual que en CONNECTED_MQTT ***
